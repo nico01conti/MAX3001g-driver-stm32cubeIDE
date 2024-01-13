@@ -67,7 +67,7 @@ const int BTAG_BITS_MASK = 0x7;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint32_t ecgIFO, readECGSamples, idx, ETAG[32], status;
+uint32_t ecgFIFO, readECGSamples, idx, ETAG[32], status;
 uint32_t biozFIFO, readBIOZSamples, BTAG[8];
 int32_t ecgSample[32], biozSample[8];
 int ecgFIFOIntFlag;
@@ -135,93 +135,7 @@ void Falling_callback(){
 	ecgFIFOIntFlag = 1;
 }
 
-void Printing(){
-	printf("yooooo\n");
-}
 
-float32_t ButterworthFilter(float32_t input1) {
-    // Coefficients obtained from MATLAB or any other design tool for a single biquad section
-	double b[] = {2.44195652983833e-05, 9.76782611935331e-05, 0.000146517391790300, 9.76782611935331e-05, 2.44195652983833e-05};
-	double a[] = {1, -3.61535270201620, 4.91831571913911, -2.98287134586922, 0.680299041791089};
-
-
-    // State variables (initialized to zero)
-    static double x[4] = {0}; // Input delays
-    static double y[4] = {0}; // Output delays
-
-    // Apply the biquad section to the input
-    double in = (double)input1;
-
-    // Calculate the output for the biquad
-    double out = b[0] * in + b[1] * x[0] + b[2] * x[1] + b[3] * x[2] + b[4] * x[3]
-                - a[1] * y[0] - a[2] * y[1] - a[3] * y[2] - a[4] * y[3];
-
-    // Update state variables
-    for (int i = 3; i > 0; i--) {
-        x[i] = x[i - 1];
-        y[i] = y[i - 1];
-    }
-
-    x[0] = in;
-    y[0] = out;
-
-    return (float32_t)out;
-}
-
-float32_t ButterworthFilterTonic(float32_t input2) {
-    float32_t b_tonic[] = {1.5033722e-06,	3.0067445e-06,	1.5033722e-06};
-    float32_t a_tonic[] = {1, -1.9965290,	0.99653500};
-
-    // State variables (initialized to zero)
-    static float32_t x_2[3] = {0}; // Input delays
-    static float32_t y_2[3] = {0}; // Output delays
-
-    // Apply the biquad section
-    float32_t in_2 = (float32_t)input2;
-    float32_t out_2 = b_tonic[0] * in_2 + b_tonic[1] * x_2[0] + b_tonic[2] * x_2[1]
-                    - a_tonic[1] * y_2[0] - a_tonic[2] * y_2[1];
-
-    // Update state variables
-    x_2[2] = x_2[1];
-    x_2[1] = x_2[0];
-    x_2[0] = in_2;
-
-    y_2[2] = y_2[1];
-    y_2[1] = y_2[0];
-    y_2[0] = out_2;
-
-    return out_2;
-}
-//
-//
-float32_t ButterworthFilterPhasic(float32_t input3) {
-    float32_t b_phasic[] = {0.99826598,	-1.9965320,	0.99826598};
-    float32_t a_phasic[] = {1,	-1.9965290,	0.99653500};
-
-    // State variables (initialized to zero)
-    static float32_t x_3[2] = {0}; // Input delays
-    static float32_t y_3[2] = {0}; // Output delays
-
-    // Apply the biquad sections (two cascaded second-order filters)
-    float32_t in_3 = (float32_t)input3;
-
-//    float32_t out_3 = b_phasic[0] * in_3 + b_phasic[1] * x_3[0] + b_phasic[2] * x_3[1] + b_phasic[3] * x_3[2] + b_phasic[4] * x_3[3]
-//                    - a_phasic[1] * y_3[0] - a_phasic[2] * y_3[1] - a_phasic[3] * y_3[2] - a_phasic[4] * y_3[3];
-    float32_t out_3 = b_phasic[0] * in_3 + b_phasic[1] * x_3[0] + b_phasic[2] * x_3[1]
-                        - a_phasic[1] * y_3[0] - a_phasic[2] * y_3[1];
-    // Update state variables
-//    x_3[3] = x_3[2];
-//    x_3[2] = x_3[1];
-    x_3[1] = x_3[0];
-    x_3[0] = in_3;
-
-//    y_3[3] = y_3[2];
-//    y_3[2] = y_3[1];
-    y_3[1] = y_3[0];
-    y_3[0] = out_3;
-
-    return out_3;
-}
 
 /* USER CODE END 0 */
 
