@@ -67,7 +67,7 @@ const int BTAG_BITS_MASK = 0x7;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint32_t ecgFIFO, readECGSamples, idx, ETAG[32], status;
+uint32_t ecgIFO, readECGSamples, idx, ETAG[32], status;
 uint32_t biozFIFO, readBIOZSamples, BTAG[8];
 int32_t ecgSample[32], biozSample[8];
 int ecgFIFOIntFlag;
