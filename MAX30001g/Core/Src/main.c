@@ -53,8 +53,9 @@ const int BTAG_BITS_MASK = 0x7;
 
 #define NUM_STAGES_2ORDER 1 // Number of biquad stages
 #define NUM_STAGES_4ORDER 2 // Number of biquad stages (for a 4th order filter)
-#define BLOCK_SIZE 16// Number of samples to process at a time
-
+#define BLOCK_SIZE 1// Number of samples to process at a time
+#define SAMPLE_RATE 32
+#define PAST_SAMPLE_BUFFER (SAMPLE_RATE * 3) //sample rate * n, n decides the second in samples to look back at
 
 
 /* USER CODE END PD */
@@ -74,11 +75,11 @@ int ecgFIFOIntFlag;
 uint32_t rtor_interval_int;
 float rtor_interval;
 
-int32_t complete_signal[1920];
 
 float32_t phasicCoeffs[NUM_STAGES_2ORDER*5] = {
     // Stage 1
-		0.996535014651354,	-1.99307002930271,	0.996535014651354,	1.99305802314321,	-0.993082035462212
+
+		0.998266003962435,	-1.99653200792487,	0.998266003962435,	1.99652900118035,	-0.996535014669388
 };
 float32_t tonicCoeffs[NUM_STAGES_4ORDER*5] = {
     // Stage 1
@@ -108,12 +109,36 @@ float32_t outputphasicForward[BLOCK_SIZE];
 float32_t outputphasicReverse[BLOCK_SIZE];
 float32_t outputtonicForward[BLOCK_SIZE];
 float32_t outputtonicReverse[BLOCK_SIZE];
+float32_t outputfilteredForward[BLOCK_SIZE];
+float32_t outputfilteredReverse[BLOCK_SIZE];
 
 
 uint32_t n_sample = 0;
 float32_t conductanceSample[BLOCK_SIZE];
 float32_t reverseSample[BLOCK_SIZE];
 uint32_t skip_sample = 0;
+
+
+float32_t phasic_window[PAST_SAMPLE_BUFFER];
+
+static  float32_t previous_1 = 0;
+static  float32_t previous_2 = 0;
+uint8_t valid_peak = 0;
+float32_t peak[BLOCK_SIZE];
+float32_t onset[BLOCK_SIZE];
+
+uint8_t SCR_rise_sample = 0;
+float32_t SCR_rise_time = 0;
+float32_t mean_risetime = 0;
+float32_t old_mean_risetime = 0;
+static uint32_t count_mean_risetime= 0;
+float32_t std_dev_risetime = 0;
+
+
+float32_t mean_tonic = 0;
+static uint32_t count_mean_tonic = 0;
+static uint16_t settling_samples_tonic = 0;
+
 
 /* USER CODE END PV */
 
@@ -134,6 +159,83 @@ int _write(int file, char *ptr, int len){
 void Falling_callback(){
 	ecgFIFOIntFlag = 1;
 }
+
+void Printing(){
+}
+
+void StdDev_RiseTime(float32_t time){
+	count_mean_risetime++;
+	mean_risetime = mean_risetime + (time-mean_risetime)/count_mean_risetime;
+	std_dev_risetime = std_dev_risetime + (time - mean_risetime) * (time - old_mean_risetime);
+	old_mean_risetime = mean_risetime;
+
+//	printf("BIOZ_STD_RISETIME:%.20f,", std_dev_risetime);
+}
+
+void Local_Peak_and_Onset(float32_t signal,float32_t *peak, float32_t *onset) {
+	SCR_rise_time = 0;
+	if(valid_peak > 0){
+	    		valid_peak--;
+	    	}
+
+    if (previous_1 > previous_2 && previous_1 > signal) {
+    	previous_2 = previous_1;
+    	previous_1 = signal;
+
+
+
+    	float32_t lowest_point = phasic_window[1];
+    	SCR_rise_sample = 1;
+		for (uint8_t i = 1; i < PAST_SAMPLE_BUFFER-valid_peak; i++) {
+			if (phasic_window[i] < lowest_point) {
+				SCR_rise_sample = i;
+				lowest_point = phasic_window[i];
+			}
+		}
+		if (previous_2 - lowest_point > 4e-7){
+			*onset = lowest_point;
+			*peak = previous_2;
+			valid_peak = PAST_SAMPLE_BUFFER - 1;
+			SCR_rise_time = SCR_rise_sample;
+			StdDev_RiseTime(SCR_rise_time);
+		}
+		else{
+			*onset = 0;
+			*peak = 0;
+
+
+		}
+    }
+    else{
+    	previous_2 = previous_1;
+		previous_1 = signal;
+
+		*onset = 0;
+		*peak = 0;
+    }
+}
+
+void Phasic_window(float32_t phasic){
+
+	for (uint8_t i = PAST_SAMPLE_BUFFER; i > 0; i--) {
+	        phasic_window[i - 1] = phasic_window[ i - 2];
+	    }
+
+	phasic_window[0] = phasic;
+
+}
+
+void Mean_Tonic(float32_t tonic){
+
+	if(settling_samples_tonic > 32*10){
+		count_mean_tonic++;
+		mean_tonic = mean_tonic + (tonic-mean_tonic)/count_mean_tonic;
+	}
+	else{
+		settling_samples_tonic++;
+	}
+}
+
 
 
 
@@ -185,8 +287,8 @@ int main(void)
   //max30001gBeginBIOZ(); 		//Configures and enable BIOZ
 
   max30001gBeginBothMode4Electrode();
-  max30003ReadInfo();
-  max30003Printconf();
+//  max30003ReadInfo();
+//  max30003Printconf();
   arm_biquad_cascade_df1_init_f32(&S_phasic, NUM_STAGES_2ORDER, phasicCoeffs, phasicState);
   arm_biquad_cascade_df1_init_f32(&S_tonic, NUM_STAGES_4ORDER, tonicCoeffs, tonicState);
   arm_biquad_cascade_df1_init_f32(&S_filtered, NUM_STAGES_4ORDER, filteredCoeffs, filteredState);
@@ -276,21 +378,37 @@ int main(void)
 						  conductanceSample[n_sample] = ((pow(2, 19) * 10 * 110 * pow(10, -9))) / biozSample[idx];
 						  reverseSample[n_sample] = ((pow(2, 19) * 10 * 110 * pow(10, -9))) / biozSample[7-idx];
 						  if (n_sample == BLOCK_SIZE - 1){
-							  arm_biquad_cascade_df1_f32(&S_filtered, conductanceSample, outputfiltered, BLOCK_SIZE);
+							  arm_biquad_cascade_df1_f32(&S_filtered, conductanceSample, outputfilteredForward, BLOCK_SIZE);
+							  arm_biquad_cascade_df1_f32(&S_filtered, reverseSample, outputfilteredReverse, BLOCK_SIZE);
 
-							  arm_biquad_cascade_df1_f32(&S_phasic, conductanceSample, outputphasicForward, BLOCK_SIZE);
-							  arm_biquad_cascade_df1_f32(&S_phasic, reverseSample, outputphasicReverse, BLOCK_SIZE);
+							  arm_biquad_cascade_df1_f32(&S_phasic, outputfilteredForward, outputphasic, BLOCK_SIZE);
 
 							  arm_biquad_cascade_df1_f32(&S_tonic, conductanceSample, outputtonicForward, BLOCK_SIZE);
 							  arm_biquad_cascade_df1_f32(&S_tonic, reverseSample, outputtonicReverse, BLOCK_SIZE);
 
 							  for (uint8_t i = 0; i < BLOCK_SIZE; i++) {
-								  outputphasic[i] = 0.5 *(outputphasicForward[i] + outputphasicReverse[i]);
+//								  outputphasic[i] = 0.5 *(outputphasicForward[i] + outputphasicReverse[i]);
 								  outputtonic[i] = 0.5* (outputtonicForward[i]+outputtonicReverse[i]);
-									  printf("BIOZ_FILTERED:%.14f,", outputfiltered[i]);
-									  printf("BIOZ:%.14f,", conductanceSample[i]);
-									  printf("BIOZ_PHASIC:%.14f,", outputphasic[i]);
-									  printf("BIOZ_TONIC:%.14f,", outputtonic[i]);
+								  outputfiltered[i] = 0.5 *(outputfilteredForward[i] + outputfilteredReverse[i]);
+
+								  Phasic_window(outputphasic[i]);
+								  Local_Peak_and_Onset(outputphasic[i], &peak[i], &onset[i]);
+								  Mean_Tonic(outputtonic[i]);
+//								  printf("BIOZ:%.14f,", conductanceSample[i]);
+//								  printf("BIOZ_FILTERED:%.4f,", outputfiltered[i]);
+//								  printf("BIOZ_TONIC:%.14f,", outputtonic[i]);
+//								  printf("BIOZ_PHASIC:%.14f,", outputphasic[i]);
+//								  printf("BIOZ_PEAK:%.14f,", peak[i]);
+//								  printf("BIOZ_ONSET:%.14f,", onset[i]);
+//								  printf("BIOZ_SCR_RISE_TIME:%.4f,", SCR_rise_time);
+//								  printf("BIOZ_TONIC_MEAN:%.14f,", mean_tonic);
+
+								  HAL_UART_Transmit(&huart1, (uint8_t*)&conductanceSample[i], 4, HAL_MAX_DELAY);
+								  HAL_UART_Transmit(&huart1, (uint8_t*)&outputfiltered[i], 4, HAL_MAX_DELAY);
+								  HAL_UART_Transmit(&huart1, (uint8_t*)&outputtonic[i], 4, HAL_MAX_DELAY);
+								  HAL_UART_Transmit(&huart1, (uint8_t*)&outputphasic[i], 4, HAL_MAX_DELAY);
+								  HAL_UART_Transmit(&huart1, (uint8_t*)&peak[i], 4, HAL_MAX_DELAY);
+
 							  }
 							  n_sample = 0;
 						  }

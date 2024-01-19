@@ -458,7 +458,7 @@ void max30001gBeginBIOZ(){
 }
 
 void max30001gBeginBothMode4Electrode(){
-	printf("ADC RESET\r\n");
+//	printf("ADC RESET\r\n");
 		DATA_Write(SW_RST,3, 0x000000);
 		HAL_Delay(100);
 
