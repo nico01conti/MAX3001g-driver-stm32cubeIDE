@@ -53,7 +53,7 @@ const int BTAG_BITS_MASK = 0x7;
 
 #define NUM_STAGES_2ORDER 1 // Number of biquad stages
 #define NUM_STAGES_4ORDER 2 // Number of biquad stages (for a 4th order filter)
-#define BLOCK_SIZE 1// Number of samples to process at a time
+#define BLOCK_SIZE 48// Number of samples to process at a time
 #define SAMPLE_RATE 32
 #define PAST_SAMPLE_BUFFER (SAMPLE_RATE * 3) //sample rate * n, n decides the second in samples to look back at
 
@@ -81,36 +81,32 @@ float32_t phasicCoeffs[NUM_STAGES_2ORDER*5] = {
 
 		0.998266003962435,	-1.99653200792487,	0.998266003962435,	1.99652900118035,	-0.996535014669388
 };
-float32_t tonicCoeffs[NUM_STAGES_4ORDER*5] = {
+float32_t tonicCoeffs[NUM_STAGES_2ORDER*5] = {
     // Stage 1
-		2.26072538474603e-12,	4.52145076949205e-12,	2.26072538474603e-12,	1.99546917140917,	-0.995475181706025,
-		1,	2,	1,	1.99811725341593,	-0.998123271688734
+		6.00307975164863e-06,	1.20061595032973e-05,	6.00307975164863e-06,	1.99305802314321,	-0.993082035462212
 };
-float32_t filteredCoeffs[NUM_STAGES_4ORDER*5] = {
+float32_t filteredCoeffs[NUM_STAGES_2ORDER*5] = {
     // Stage 1
-		2.4419565e-05,	4.8863920e-05,	2.4419731e-05,	1.7422240,	-0.76127446,
-		1,	2,	1,	1.8731294,	-0.89363289
+		0.00490303497078511,	0.00980606994157022	,0.00490303497078511,	1.79238563711149,	-0.811997776994632
 };
 /* State buffer for the biquad filter */
 
-static float32_t phasicState[NUM_STAGES_2ORDER*4];
-static float32_t tonicState[NUM_STAGES_4ORDER*4];
-static float32_t filteredState[NUM_STAGES_4ORDER*4];
+static float32_t phasicState[NUM_STAGES_2ORDER*2];
+static float32_t tonicState[NUM_STAGES_2ORDER*2];
+static float32_t filteredState[NUM_STAGES_2ORDER*2];
 
-static arm_biquad_casd_df1_inst_f32 S_phasic;
-static arm_biquad_casd_df1_inst_f32 S_tonic;
-static arm_biquad_casd_df1_inst_f32 S_filtered;
+static arm_biquad_cascade_df2T_instance_f32 S_phasic;
+static arm_biquad_cascade_df2T_instance_f32 S_tonic;
+static arm_biquad_cascade_df2T_instance_f32 S_filtered;
 
 float32_t outputphasic[BLOCK_SIZE];
 float32_t outputtonic[BLOCK_SIZE];
 float32_t outputfiltered[BLOCK_SIZE];
 
-float32_t outputphasicForward[BLOCK_SIZE];
-float32_t outputphasicReverse[BLOCK_SIZE];
-float32_t outputtonicForward[BLOCK_SIZE];
-float32_t outputtonicReverse[BLOCK_SIZE];
-float32_t outputfilteredForward[BLOCK_SIZE];
-float32_t outputfilteredReverse[BLOCK_SIZE];
+float32_t outputphasicMiddle[BLOCK_SIZE];
+float32_t outputtonicMiddle[BLOCK_SIZE];
+float32_t outputfilteredMiddle[BLOCK_SIZE];
+
 
 
 uint32_t n_sample = 0;
@@ -138,6 +134,9 @@ float32_t std_dev_risetime = 0;
 float32_t mean_tonic = 0;
 static uint32_t count_mean_tonic = 0;
 static uint16_t settling_samples_tonic = 0;
+
+float32_t max_tonic = 0;
+float32_t max_phasic = 0;
 
 
 /* USER CODE END PV */
@@ -236,6 +235,45 @@ void Mean_Tonic(float32_t tonic){
 	}
 }
 
+void Max_Signal(float32_t signal, float32_t* max){
+	if (*max < signal){
+		*max = signal;
+	}
+}
+
+void flip(float32_t Array[], uint32_t dimArray){
+	uint32_t nforward=0;
+	uint32_t nbackward=dimArray-1;
+	float32_t temp;
+	 while(nforward<nbackward){
+	      //swap
+	      temp = Array[nforward];
+	      Array[nforward] = Array[nbackward];
+	      Array[nbackward] = temp;
+
+	      nforward++;
+	      nbackward--;
+	    }
+}
+
+void filtfilt(const arm_biquad_cascade_df2T_instance_f32 * S,
+  float32_t * pInput,
+  float32_t * pMiddle,
+  float32_t * pOutput,
+  uint32_t blockSize)
+{
+	arm_biquad_cascade_df2T_f32(S, pInput, pMiddle, blockSize);
+
+	flip(pMiddle, blockSize);
+
+	arm_biquad_cascade_df2T_f32(S, pMiddle, pOutput, blockSize);
+
+	flip(pOutput, blockSize);
+
+}
+
+
+
 
 
 
@@ -289,9 +327,10 @@ int main(void)
   max30001gBeginBothMode4Electrode();
 //  max30003ReadInfo();
 //  max30003Printconf();
-  arm_biquad_cascade_df1_init_f32(&S_phasic, NUM_STAGES_2ORDER, phasicCoeffs, phasicState);
-  arm_biquad_cascade_df1_init_f32(&S_tonic, NUM_STAGES_4ORDER, tonicCoeffs, tonicState);
-  arm_biquad_cascade_df1_init_f32(&S_filtered, NUM_STAGES_4ORDER, filteredCoeffs, filteredState);
+
+  arm_biquad_cascade_df2T_init_f32(&S_phasic, NUM_STAGES_2ORDER, phasicCoeffs, phasicState);
+  arm_biquad_cascade_df2T_init_f32(&S_tonic, NUM_STAGES_2ORDER, tonicCoeffs, tonicState);
+  arm_biquad_cascade_df2T_init_f32(&S_filtered, NUM_STAGES_2ORDER, filteredCoeffs, filteredState);
   uint8_t buffer_in[4];
 
 
@@ -378,22 +417,17 @@ int main(void)
 						  conductanceSample[n_sample] = ((pow(2, 19) * 10 * 110 * pow(10, -9))) / biozSample[idx];
 						  reverseSample[n_sample] = ((pow(2, 19) * 10 * 110 * pow(10, -9))) / biozSample[7-idx];
 						  if (n_sample == BLOCK_SIZE - 1){
-							  arm_biquad_cascade_df1_f32(&S_filtered, conductanceSample, outputfilteredForward, BLOCK_SIZE);
-							  arm_biquad_cascade_df1_f32(&S_filtered, reverseSample, outputfilteredReverse, BLOCK_SIZE);
-
-							  arm_biquad_cascade_df1_f32(&S_phasic, outputfilteredForward, outputphasic, BLOCK_SIZE);
-
-							  arm_biquad_cascade_df1_f32(&S_tonic, conductanceSample, outputtonicForward, BLOCK_SIZE);
-							  arm_biquad_cascade_df1_f32(&S_tonic, reverseSample, outputtonicReverse, BLOCK_SIZE);
+//							  arm_biquad_cascade_df2T_f32(&S_filtered, conductanceSample, outputfiltered, BLOCK_SIZE);
+							  arm_biquad_cascade_df2T_f32(&S_filtered, conductanceSample, outputfiltered, BLOCK_SIZE);
+							  arm_biquad_cascade_df2T_f32(&S_phasic, outputfiltered, outputphasic, BLOCK_SIZE);
+							  filtfilt(&S_tonic, conductanceSample, outputtonicMiddle, outputtonic, BLOCK_SIZE);
 
 							  for (uint8_t i = 0; i < BLOCK_SIZE; i++) {
-//								  outputphasic[i] = 0.5 *(outputphasicForward[i] + outputphasicReverse[i]);
-								  outputtonic[i] = 0.5* (outputtonicForward[i]+outputtonicReverse[i]);
-								  outputfiltered[i] = 0.5 *(outputfilteredForward[i] + outputfilteredReverse[i]);
-
 								  Phasic_window(outputphasic[i]);
 								  Local_Peak_and_Onset(outputphasic[i], &peak[i], &onset[i]);
 								  Mean_Tonic(outputtonic[i]);
+								  Max_Signal(outputtonic[i], &max_tonic);
+								  Max_Signal(outputphasic[i], &max_phasic);
 //								  printf("BIOZ:%.14f,", conductanceSample[i]);
 //								  printf("BIOZ_FILTERED:%.4f,", outputfiltered[i]);
 //								  printf("BIOZ_TONIC:%.14f,", outputtonic[i]);
