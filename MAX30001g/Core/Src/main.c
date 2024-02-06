@@ -53,7 +53,7 @@ const int BTAG_BITS_MASK = 0x7;
 
 #define NUM_STAGES_2ORDER 1 // Number of biquad stages
 #define NUM_STAGES_4ORDER 2 // Number of biquad stages (for a 4th order filter)
-#define BLOCK_SIZE 48// Number of samples to process at a time
+#define BLOCK_SIZE 1// Number of samples to process at a time
 #define SAMPLE_RATE 32
 #define PAST_SAMPLE_BUFFER (SAMPLE_RATE * 3) //sample rate * n, n decides the second in samples to look back at
 
@@ -74,7 +74,6 @@ int32_t ecgSample[32], biozSample[8];
 int ecgFIFOIntFlag;
 uint32_t rtor_interval_int;
 float rtor_interval;
-
 
 float32_t phasicCoeffs[NUM_STAGES_2ORDER*5] = {
     // Stage 1
@@ -160,6 +159,7 @@ void Falling_callback(){
 }
 
 void Printing(){
+
 }
 
 void StdDev_RiseTime(float32_t time){
@@ -415,19 +415,30 @@ int main(void)
 				  for( idx = 0; idx < readBIOZSamples; idx++ ) {
 					  if (skip_sample > 63){
 						  conductanceSample[n_sample] = ((pow(2, 19) * 10 * 110 * pow(10, -9))) / biozSample[idx];
-						  reverseSample[n_sample] = ((pow(2, 19) * 10 * 110 * pow(10, -9))) / biozSample[7-idx];
+						  HAL_UART_Transmit(&huart1, (uint8_t*)&conductanceSample[n_sample], 4, HAL_MAX_DELAY);
+						  HAL_UART_Transmit(&huart1, (uint8_t*)&outputfiltered[n_sample], 4, HAL_MAX_DELAY);
+						  HAL_UART_Transmit(&huart1, (uint8_t*)&outputtonic[n_sample], 4, HAL_MAX_DELAY);
+						  HAL_UART_Transmit(&huart1, (uint8_t*)&outputphasic[n_sample], 4, HAL_MAX_DELAY);
+						  HAL_UART_Transmit(&huart1, (uint8_t*)&peak[n_sample], 4, HAL_MAX_DELAY);
+						  Phasic_window(outputphasic[n_sample]);
+						  Local_Peak_and_Onset(outputphasic[n_sample], &peak[n_sample], &onset[n_sample]);
+						  Mean_Tonic(outputtonic[n_sample]);
+						  Max_Signal(outputtonic[n_sample], &max_tonic);
+						  Max_Signal(outputphasic[n_sample], &max_phasic);
+
 						  if (n_sample == BLOCK_SIZE - 1){
+
 //							  arm_biquad_cascade_df2T_f32(&S_filtered, conductanceSample, outputfiltered, BLOCK_SIZE);
 							  arm_biquad_cascade_df2T_f32(&S_filtered, conductanceSample, outputfiltered, BLOCK_SIZE);
 							  arm_biquad_cascade_df2T_f32(&S_phasic, outputfiltered, outputphasic, BLOCK_SIZE);
 							  filtfilt(&S_tonic, conductanceSample, outputtonicMiddle, outputtonic, BLOCK_SIZE);
 
-							  for (uint8_t i = 0; i < BLOCK_SIZE; i++) {
-								  Phasic_window(outputphasic[i]);
-								  Local_Peak_and_Onset(outputphasic[i], &peak[i], &onset[i]);
-								  Mean_Tonic(outputtonic[i]);
-								  Max_Signal(outputtonic[i], &max_tonic);
-								  Max_Signal(outputphasic[i], &max_phasic);
+//							  for (uint8_t i = 0; i < BLOCK_SIZE; i++) {
+//								  Phasic_window(outputphasic[i]);
+//								  Local_Peak_and_Onset(outputphasic[i], &peak[i], &onset[i]);
+//								  Mean_Tonic(outputtonic[i]);
+//								  Max_Signal(outputtonic[i], &max_tonic);
+//								  Max_Signal(outputphasic[i], &max_phasic);
 //								  printf("BIOZ:%.14f,", conductanceSample[i]);
 //								  printf("BIOZ_FILTERED:%.4f,", outputfiltered[i]);
 //								  printf("BIOZ_TONIC:%.14f,", outputtonic[i]);
@@ -437,13 +448,8 @@ int main(void)
 //								  printf("BIOZ_SCR_RISE_TIME:%.4f,", SCR_rise_time);
 //								  printf("BIOZ_TONIC_MEAN:%.14f,", mean_tonic);
 
-								  HAL_UART_Transmit(&huart1, (uint8_t*)&conductanceSample[i], 4, HAL_MAX_DELAY);
-								  HAL_UART_Transmit(&huart1, (uint8_t*)&outputfiltered[i], 4, HAL_MAX_DELAY);
-								  HAL_UART_Transmit(&huart1, (uint8_t*)&outputtonic[i], 4, HAL_MAX_DELAY);
-								  HAL_UART_Transmit(&huart1, (uint8_t*)&outputphasic[i], 4, HAL_MAX_DELAY);
-								  HAL_UART_Transmit(&huart1, (uint8_t*)&peak[i], 4, HAL_MAX_DELAY);
 
-							  }
+//							  }
 							  n_sample = 0;
 						  }
 						  else{
