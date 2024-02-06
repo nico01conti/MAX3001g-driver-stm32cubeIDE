@@ -102,16 +102,12 @@ float32_t filteredCoeffs[NUM_STAGES_2ORDER*5] = {
 };
 /* State buffer for the biquad filter */
 
-//static float32_t phasicState[NUM_STAGES_2ORDER*2];
-//static float32_t tonicState[NUM_STAGES_2ORDER*2];
-//static float32_t filteredState[NUM_STAGES_2ORDER*2];
+
 static float32_t phasicState[NUM_TAPS+BLOCK_SIZE-1];
 static float32_t tonicState[512+BLOCK_SIZE-1];
 static float32_t filteredState[64+BLOCK_SIZE-1];
 
-//static arm_biquad_cascade_df2T_instance_f32 S_phasic;
-//static arm_biquad_cascade_df2T_instance_f32 S_tonic;
-//static arm_biquad_cascade_df2T_instance_f32 S_filtered;
+
 static arm_fir_instance_f32 S_phasic;
 static arm_fir_instance_f32 S_tonic;
 static arm_fir_instance_f32 S_filtered;
@@ -334,9 +330,6 @@ int main(void)
 //  max30003ReadInfo();
 //  max30003Printconf();
 
-//  arm_biquad_cascade_df2T_init_f32(&S_phasic, NUM_STAGES_2ORDER, phasicCoeffs, phasicState);
-//  arm_biquad_cascade_df2T_init_f32(&S_tonic, NUM_STAGES_2ORDER, tonicCoeffs, tonicState);
-//  arm_biquad_cascade_df2T_init_f32(&S_filtered, NUM_STAGES_2ORDER, filteredCoeffs, filteredState);
   arm_fir_init_f32(&S_phasic, NUM_TAPS, (float32_t*)phasicCoeffsFIR, phasicState, BLOCK_SIZE);
   arm_fir_init_f32(&S_tonic, 512, (float32_t*)tonicCoeffsFIR, tonicState, BLOCK_SIZE);
   arm_fir_init_f32(&S_filtered, 64, (float32_t*)filteredCoeffsFIR, filteredState, BLOCK_SIZE);
@@ -350,9 +343,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-//	  HAL_UART_Receive_IT(&huart1, receivedData, 4);
-//	  memcpy(&biozSample, receivedData, sizeof(int32_t));
-//	  conductanceSample[0] = ((pow(2, 19) * 10 * 110 * pow(10, -9))) / biozSample[0];
+
 	  HAL_UART_Receive_IT(&huart1, receivedData, 8);
 	  memcpy(&outputtonic, receivedData, sizeof(float32_t));
 	  memcpy(&outputphasic, receivedData + 4, sizeof(float32_t));
@@ -360,19 +351,6 @@ int main(void)
 	  if( ecgFIFOIntFlag ) {
 		  ecgFIFOIntFlag = 0;
 		  if (baseline_period == 0){
-//			  HAL_UART_Transmit(&huart1, (uint8_t*)&conductanceSample[0], 4, HAL_MAX_DELAY);
-//			  HAL_UART_Transmit(&huart1, (uint8_t*)&conductance_mean, 4, HAL_MAX_DELAY);
-//			  HAL_UART_Transmit(&huart1, (uint8_t *)&conductance_std_dev, 4, HAL_MAX_DELAY);
-
-//			  conductanceSample[0] = (conductanceSample[0] - conductance_mean)/ conductance_std_dev;
-//			  conductanceSample[0] = (conductanceSample[0] - 1.73663421008768e-05)/ 1.5847989742205317e-06;
-//			  arm_fir_f32(&S_filtered, conductanceSample, outputfiltered, BLOCK_SIZE);
-//			  arm_fir_f32(&S_phasic, outputfiltered, outputphasic, BLOCK_SIZE);
-//			  arm_fir_f32(&S_tonic, conductanceSample, outputtonic, BLOCK_SIZE);
-
-	  //		  arm_biquad_cascade_df2T_f32(&S_filtered, conductanceSample, outputfiltered, BLOCK_SIZE);
-	  //		  arm_biquad_cascade_df2T_f32(&S_phasic, outputfiltered, outputphasic, BLOCK_SIZE);
-	  //		  arm_biquad_cascade_df2T_f32(&S_tonic, outputfiltered, outputtonic, BLOCK_SIZE);
 
 			  for (uint8_t i = 0; i < BLOCK_SIZE; i++) {
 
@@ -381,19 +359,6 @@ int main(void)
 				  Mean(outputtonic[i], &tonic_count, &tonic_mean, &tonic_mean_settling);
 				  Mean(outputphasic[i], &phasic_count, &phasic_mean, &phasic_mean_settling);
 				  Max_Signal(outputtonic[i], &max_tonic, &max_tonic_settling);
-
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&conductanceSample[i], 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&outputfiltered[i], 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&outputtonic[i], 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&outputphasic[i], 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&peak[i], 4, HAL_MAX_DELAY);
-//			      HAL_UART_Transmit(&huart1, (uint8_t*)&onset[i], 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&SCR_risetime, 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&risetime_std_dev, 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&n_peak, 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&max_tonic, 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&tonic_mean, 4, HAL_MAX_DELAY);
-//				  HAL_UART_Transmit(&huart1, (uint8_t*)&phasic_mean, 4, HAL_MAX_DELAY);
 
 				  features[0] = tonic_mean;
 			      features[1] = phasic_mean;
@@ -418,9 +383,7 @@ int main(void)
 					  risetime_count = 0;
 					  HAL_UART_Transmit(&huart1, (uint8_t*)&out, 4, HAL_MAX_DELAY);
 					  valid_peak = PAST_SAMPLE_BUFFER - 1;
-//					  arm_fir_init_f32(&S_phasic, 512, (float32_t*)phasicCoeffsFIR, phasicState, BLOCK_SIZE);
-//					  arm_fir_init_f32(&S_tonic, 512, (float32_t*)tonicCoeffsFIR, tonicState, BLOCK_SIZE);
-//					  arm_fir_init_f32(&S_filtered, 64, (float32_t*)filteredCoeffsFIR, filteredState, BLOCK_SIZE);
+
 					  window = 0;
 				  }
 				  else{
