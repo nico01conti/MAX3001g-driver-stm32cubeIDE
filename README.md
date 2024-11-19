@@ -1,0 +1,1 @@
+Driver for MAX30001G biopotential sensor written in C using STM32CubeIDE. Files contain also the pipeline for SPI communciation between microcontroller and sensor slave, EDA and ECG acquisition, EDA preprocessing in Tonic and Phasic components, feature extraction and Classification in stress or non stress data. 
